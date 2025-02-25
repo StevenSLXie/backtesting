@@ -5,7 +5,6 @@ from datetime import datetime
 import time
 from flask_cors import CORS
 from functools import lru_cache
-import http
 
 app = Flask(__name__, 
     static_url_path='/static',
@@ -46,7 +45,7 @@ def fetch_stock_data(ticker, period1, period2):
     try:
         time.sleep(1)  # 1 second delay
         
-        response = http.get(url, params=params, headers=headers, timeout=10)
+        response = requests.get(url, params=params, headers=headers, timeout=10)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
