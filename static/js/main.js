@@ -86,8 +86,19 @@ document.addEventListener('DOMContentLoaded', function() {
     async function fetchBenchmarkData(startDate, endDate) {
         const benchmark = document.getElementById('benchmark').value;
         try {
+            console.log(`Fetching benchmark data for ${benchmark}...`);
             const data = await fetchStockData(benchmark, startDate, endDate);
-            return data;
+            
+            // Transform the data to match the expected format
+            const benchmarkHistory = data.map(point => ({
+                date: point.date,
+                close: point.close,
+                // Normalize to 100 at the start for better comparison
+                value: point.close * (100 / data[0].close)
+            }));
+            
+            console.log('Benchmark data:', benchmarkHistory);
+            return benchmarkHistory;
         } catch (error) {
             console.error(`Error fetching benchmark data: ${error}`);
             throw new Error(`Failed to fetch benchmark data: ${error.message}`);
@@ -95,21 +106,34 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function calculateBenchmarkMetrics(portfolioData, benchmarkData) {
-        // Calculate daily returns for portfolio and benchmark
+        console.log('Calculating benchmark metrics...');
+        console.log('Portfolio data:', portfolioData);
+        console.log('Benchmark data:', benchmarkData);
+
+        // Calculate daily returns
         const portfolioReturns = calculateDailyReturns(portfolioData);
         const benchmarkReturns = calculateDailyReturns(benchmarkData);
 
-        // Calculate beta (market sensitivity)
+        // Calculate total returns
+        const portfolioTotalReturn = (portfolioData[portfolioData.length - 1].value / portfolioData[0].value - 1) * 100;
+        const benchmarkTotalReturn = (benchmarkData[benchmarkData.length - 1].value / benchmarkData[0].value - 1) * 100;
+
+        // Calculate beta
         const beta = calculateBeta(portfolioReturns, benchmarkReturns);
 
         // Calculate alpha (excess return)
-        const portfolioTotalReturn = (portfolioData[portfolioData.length - 1].value / portfolioData[0].value - 1) * 100;
-        const benchmarkTotalReturn = (benchmarkData[benchmarkData.length - 1].close / benchmarkData[0].close - 1) * 100;
         const alpha = portfolioTotalReturn - (benchmarkTotalReturn * beta);
 
+        console.log('Metrics calculated:', {
+            alpha,
+            beta,
+            benchmarkReturn: benchmarkTotalReturn,
+            portfolioReturn: portfolioTotalReturn
+        });
+
         return {
-            alpha: alpha,
-            beta: beta,
+            alpha,
+            beta,
             benchmarkReturn: benchmarkTotalReturn
         };
     }
@@ -162,7 +186,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const { startDate, endDate } = getDateRange(timeframe);
             
-            // Fetch both portfolio and benchmark data
+            // Fetch portfolio data
             const stocksData = [];
             for (const stock of portfolio) {
                 try {
@@ -174,17 +198,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            const benchmarkData = await fetchBenchmarkData(startDate, endDate);
-            
+            // Calculate portfolio metrics
             const metrics = calculatePortfolioMetrics(stocksData, portfolio);
+            
+            // Fetch and calculate benchmark metrics
+            const benchmarkData = await fetchBenchmarkData(startDate, endDate);
             const benchmarkMetrics = calculateBenchmarkMetrics(metrics.history, benchmarkData);
             
+            // Update UI
             updateMetrics({
                 ...metrics,
                 ...benchmarkMetrics
             });
             
+            // Create graph with both series
             createGraph(metrics.history, benchmarkData, timeframe);
+            
+            console.log('All metrics calculated:', {
+                portfolio: metrics,
+                benchmark: benchmarkMetrics
+            });
+            
         } catch (error) {
             console.error('Error:', error);
             alert(error.message);
@@ -289,13 +323,30 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('beta').textContent = metrics.beta.toFixed(2);
     }
 
-    function createGraph(portfolioHistory, benchmarkHistory, timeframe) {
+    function createGraph(portfolioHistory, benchmarkData, timeframe) {
         const showBenchmark = document.getElementById('show-benchmark').checked;
         
+        console.log('Creating graph with:', {
+            portfolioPoints: portfolioHistory.length,
+            benchmarkPoints: benchmarkData.length,
+            showBenchmark
+        });
+
+        // Normalize both series to start at 100
+        const normalizedPortfolio = portfolioHistory.map(point => ({
+            date: point.date,
+            value: point.value * (100 / portfolioHistory[0].value)
+        }));
+
+        const normalizedBenchmark = benchmarkData.map(point => ({
+            date: point.date,
+            value: point.value * (100 / benchmarkData[0].value)
+        }));
+
         const traces = [{
             name: 'Portfolio',
-            x: portfolioHistory.map(point => new Date(point.date)),
-            y: portfolioHistory.map(point => point.value),
+            x: normalizedPortfolio.map(point => new Date(point.date)),
+            y: normalizedPortfolio.map(point => point.value),
             type: 'scatter',
             mode: 'lines',
             line: {
@@ -306,8 +357,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (showBenchmark) {
             traces.push({
                 name: 'Benchmark',
-                x: benchmarkHistory.map(point => new Date(point.date)),
-                y: benchmarkHistory.map(point => point.close),
+                x: normalizedBenchmark.map(point => new Date(point.date)),
+                y: normalizedBenchmark.map(point => point.value),
                 type: 'scatter',
                 mode: 'lines',
                 line: {
@@ -318,14 +369,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const layout = {
-            title: 'Portfolio Performance',
+            title: 'Portfolio vs Benchmark Performance',
             xaxis: {
                 title: 'Date',
                 tickformat: '%Y-%m-%d'
             },
             yaxis: {
-                title: 'Value',
-                tickformat: '$.2f'
+                title: 'Value (Normalized to 100)',
+                tickformat: '.0f'
             },
             showlegend: true,
             legend: {
