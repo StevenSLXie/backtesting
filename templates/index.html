@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Custom Portfolio Builder</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Custom Portfolio Builder</h1>
+            <p>Build and analyze your personalized stock portfolio</p>
+        </div>
+
+        <div class="portfolio-builder">
+            <div class="stock-inputs">
+                <h2>Portfolio Composition</h2>
+                <div class="time-horizon">
+                    <label for="timeframe">Time Horizon:</label>
+                    <select id="timeframe">
+                        <option value="6M">6 Months</option>
+                        <option value="1Y" selected>1 Year</option>
+                        <option value="2Y">2 Years</option>
+                        <option value="5Y">5 Years</option>
+                        <option value="10Y">10 Years</option>
+                    </select>
+                </div>
+                <div id="stock-entries">
+                    <!-- Stock entries will be added here -->
+                </div>
+                <button id="add-stock">Add Stock</button>
+                <button id="calculate">Calculate Metrics</button>
+            </div>
+
+            <div class="metrics">
+                <h2>Portfolio Metrics</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <h3>Total Return</h3>
+                        <div id="total-return" class="metric-value">0.00%</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Portfolio Value</h3>
+                        <div id="portfolio-value" class="metric-value">$0.00</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Daily Change</h3>
+                        <div id="daily-change" class="metric-value">0.00%</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Volatility</h3>
+                        <div id="volatility" class="metric-value">0.00%</div>
+                    </div>
+                </div>
+                <div id="graph-container" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html> 
