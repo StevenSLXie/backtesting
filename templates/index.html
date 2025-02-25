@@ -26,6 +26,20 @@
                         <option value="10Y">10 Years</option>
                     </select>
                 </div>
+                <div class="benchmark-selection">
+                    <label for="benchmark">Benchmark Index:</label>
+                    <select id="benchmark">
+                        <option value="^GSPC">S&P 500</option>
+                        <option value="^DJI">Dow Jones</option>
+                        <option value="^IXIC">NASDAQ</option>
+                        <option value="^STI">STI Index</option>
+                        <option value="^FTSE">FTSE 100</option>
+                    </select>
+                    <div class="benchmark-toggle">
+                        <input type="checkbox" id="show-benchmark" checked>
+                        <label for="show-benchmark">Show Benchmark</label>
+                    </div>
+                </div>
                 <div id="stock-entries">
                     <!-- Stock entries will be added here -->
                 </div>
@@ -51,6 +65,14 @@
                     <div class="metric-card">
                         <h3>Volatility</h3>
                         <div id="volatility" class="metric-value">0.00%</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>vs Benchmark</h3>
+                        <div id="alpha" class="metric-value">0.00%</div>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Beta</h3>
+                        <div id="beta" class="metric-value">0.00</div>
                     </div>
                 </div>
                 <div id="graph-container" style="margin-top: 20px;"></div>

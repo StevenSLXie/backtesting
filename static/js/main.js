@@ -83,6 +83,67 @@ document.addEventListener('DOMContentLoaded', function() {
         return { startDate, endDate };
     }
 
+    async function fetchBenchmarkData(startDate, endDate) {
+        const benchmark = document.getElementById('benchmark').value;
+        try {
+            const data = await fetchStockData(benchmark, startDate, endDate);
+            return data;
+        } catch (error) {
+            console.error(`Error fetching benchmark data: ${error}`);
+            throw new Error(`Failed to fetch benchmark data: ${error.message}`);
+        }
+    }
+
+    function calculateBenchmarkMetrics(portfolioData, benchmarkData) {
+        // Calculate daily returns for portfolio and benchmark
+        const portfolioReturns = calculateDailyReturns(portfolioData);
+        const benchmarkReturns = calculateDailyReturns(benchmarkData);
+
+        // Calculate beta (market sensitivity)
+        const beta = calculateBeta(portfolioReturns, benchmarkReturns);
+
+        // Calculate alpha (excess return)
+        const portfolioTotalReturn = (portfolioData[portfolioData.length - 1].value / portfolioData[0].value - 1) * 100;
+        const benchmarkTotalReturn = (benchmarkData[benchmarkData.length - 1].close / benchmarkData[0].close - 1) * 100;
+        const alpha = portfolioTotalReturn - (benchmarkTotalReturn * beta);
+
+        return {
+            alpha: alpha,
+            beta: beta,
+            benchmarkReturn: benchmarkTotalReturn
+        };
+    }
+
+    function calculateDailyReturns(data) {
+        const returns = [];
+        for (let i = 1; i < data.length; i++) {
+            const prevValue = data[i-1].value || data[i-1].close;
+            const currentValue = data[i].value || data[i].close;
+            returns.push((currentValue / prevValue) - 1);
+        }
+        return returns;
+    }
+
+    function calculateBeta(portfolioReturns, benchmarkReturns) {
+        // Calculate covariance and variance
+        const n = Math.min(portfolioReturns.length, benchmarkReturns.length);
+        let covariance = 0;
+        let benchmarkVariance = 0;
+        
+        const portfolioMean = portfolioReturns.reduce((a, b) => a + b, 0) / n;
+        const benchmarkMean = benchmarkReturns.reduce((a, b) => a + b, 0) / n;
+        
+        for (let i = 0; i < n; i++) {
+            covariance += (portfolioReturns[i] - portfolioMean) * (benchmarkReturns[i] - benchmarkMean);
+            benchmarkVariance += Math.pow(benchmarkReturns[i] - benchmarkMean, 2);
+        }
+        
+        covariance /= (n - 1);
+        benchmarkVariance /= (n - 1);
+        
+        return covariance / benchmarkVariance;
+    }
+
     async function calculateMetrics() {
         const entries = document.querySelectorAll('.stock-entry');
         const timeframe = document.getElementById('timeframe').value;
@@ -101,25 +162,29 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const { startDate, endDate } = getDateRange(timeframe);
             
-            // Add delay between requests
+            // Fetch both portfolio and benchmark data
             const stocksData = [];
             for (const stock of portfolio) {
                 try {
                     const data = await fetchStockData(stock.ticker, startDate, endDate);
                     stocksData.push(data);
-                    await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between requests
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch (error) {
-                    if (error.message.includes('Rate limit')) {
-                        alert('Rate limit reached. Please wait a moment and try again.');
-                        return;
-                    }
                     throw error;
                 }
             }
 
+            const benchmarkData = await fetchBenchmarkData(startDate, endDate);
+            
             const metrics = calculatePortfolioMetrics(stocksData, portfolio);
-            updateMetrics(metrics);
-            createGraph(metrics.history, timeframe);
+            const benchmarkMetrics = calculateBenchmarkMetrics(metrics.history, benchmarkData);
+            
+            updateMetrics({
+                ...metrics,
+                ...benchmarkMetrics
+            });
+            
+            createGraph(metrics.history, benchmarkData, timeframe);
         } catch (error) {
             console.error('Error:', error);
             alert(error.message);
@@ -220,30 +285,68 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('portfolio-value').textContent = `$${metrics.portfolioValue.toFixed(2)}`;
         document.getElementById('daily-change').textContent = `${metrics.dailyChange.toFixed(2)}%`;
         document.getElementById('volatility').textContent = `${metrics.volatility.toFixed(2)}%`;
+        document.getElementById('alpha').textContent = `${metrics.alpha.toFixed(2)}%`;
+        document.getElementById('beta').textContent = metrics.beta.toFixed(2);
     }
 
-    function createGraph(history, timeframe) {
-        const trace = {
-            x: history.map(point => point.date),
-            y: history.map(point => point.value),
+    function createGraph(portfolioHistory, benchmarkHistory, timeframe) {
+        const showBenchmark = document.getElementById('show-benchmark').checked;
+        
+        const traces = [{
+            name: 'Portfolio',
+            x: portfolioHistory.map(point => new Date(point.date)),
+            y: portfolioHistory.map(point => point.value),
             type: 'scatter',
             mode: 'lines',
-            name: 'Portfolio Value'
-        };
+            line: {
+                color: '#2E7D32'
+            }
+        }];
+
+        if (showBenchmark) {
+            traces.push({
+                name: 'Benchmark',
+                x: benchmarkHistory.map(point => new Date(point.date)),
+                y: benchmarkHistory.map(point => point.close),
+                type: 'scatter',
+                mode: 'lines',
+                line: {
+                    color: '#1976D2',
+                    dash: 'dot'
+                }
+            });
+        }
 
         const layout = {
-            title: `Portfolio Performance (${timeframe})`,
-            xaxis: { 
+            title: 'Portfolio Performance',
+            xaxis: {
                 title: 'Date',
-                rangeslider: {visible: true}
+                tickformat: '%Y-%m-%d'
             },
-            yaxis: { 
-                title: 'Value ($)',
+            yaxis: {
+                title: 'Value',
                 tickformat: '$.2f'
             },
-            showlegend: true
+            showlegend: true,
+            legend: {
+                x: 0,
+                y: 1
+            }
         };
 
-        Plotly.newPlot('graph-container', [trace], layout);
+        Plotly.newPlot('graph-container', traces, layout);
     }
+
+    // Add event listeners
+    document.getElementById('benchmark').addEventListener('change', () => {
+        if (document.querySelectorAll('.stock-entry').length > 0) {
+            calculateMetrics();
+        }
+    });
+
+    document.getElementById('show-benchmark').addEventListener('change', () => {
+        if (document.querySelectorAll('.stock-entry').length > 0) {
+            calculateMetrics();
+        }
+    });
 }); 
