@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const period2 = Math.floor(endDate.getTime() / 1000);
         
         try {
+            console.log(`Fetching data for ${ticker}...`);  // Debug log
             const response = await fetch(`/api/stock-data?ticker=${ticker}&period1=${period1}&period2=${period2}`);
             
             if (!response.ok) {
@@ -46,6 +47,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             const data = await response.json();
+            console.log(`Received data for ${ticker}`);  // Debug log
             
             if (data.chart.error) {
                 throw new Error(`Yahoo Finance API error for ${ticker}`);

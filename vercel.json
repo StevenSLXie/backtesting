@@ -23,6 +23,9 @@
             "dest": "main.py"
         },
         {
+            "handle": "filesystem"
+        },
+        {
             "src": "/(.*)",
             "dest": "main.py"
         }

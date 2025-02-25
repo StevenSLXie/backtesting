@@ -37,10 +37,14 @@ def get_stock_data():
     }
     
     try:
+        print(f"Fetching data for {ticker} from Yahoo Finance...")  # Debug log
         response = requests.get(url, params=params)
         response.raise_for_status()  # Raise an exception for bad status codes
-        return jsonify(response.json())
+        data = response.json()
+        print(f"Successfully fetched data for {ticker}")  # Debug log
+        return jsonify(data)
     except requests.RequestException as e:
+        print(f"Error fetching data for {ticker}: {str(e)}")  # Debug log
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
