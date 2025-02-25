@@ -18,10 +18,8 @@ CORS(app)
 def fetch_stock_data(ticker, period1, period2):
     # Add .SI suffix for Singapore stocks if not present
     if ticker.startswith('^STI') or ticker.upper().endswith('.SI'):
-        # Already has market identifier
         formatted_ticker = ticker
     else:
-        # Check if it might be a Singapore stock (you can add more prefixes)
         sg_prefixes = ['C', 'D', 'F', 'G', 'H', 'J', 'K', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'Y', 'Z']
         if any(ticker.startswith(prefix) for prefix in sg_prefixes) and ticker[1:].isdigit():
             formatted_ticker = f"{ticker}.SI"
@@ -47,16 +45,36 @@ def fetch_stock_data(ticker, period1, period2):
         
         response = requests.get(url, params=params, headers=headers, timeout=10)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        # Debug logging
+        if 'chart' in data and 'result' in data['chart'] and data['chart']['result']:
+            result = data['chart']['result'][0]
+            timestamps = result['timestamp']
+            quotes = result['indicators']['quote'][0]
+            
+            # Get first and last valid prices
+            close_prices = [p for p in quotes['close'] if p is not None]
+            if close_prices:
+                start_price = close_prices[0]
+                end_price = close_prices[-1]
+                start_date = datetime.fromtimestamp(timestamps[0]).strftime('%Y-%m-%d')
+                end_date = datetime.fromtimestamp(timestamps[-1]).strftime('%Y-%m-%d')
+                
+                print(f"\nDebug for {formatted_ticker}:")
+                print(f"Start Date: {start_date}, Price: {start_price:.2f}")
+                print(f"End Date: {end_date}, Price: {end_price:.2f}")
+                print(f"Total Return: {((end_price/start_price - 1) * 100):.2f}%")
+                print(f"Number of data points: {len(close_prices)}")
+        
+        return data
+        
     except requests.exceptions.RequestException as e:
         print(f"Error fetching {formatted_ticker}: {str(e)}")
         if hasattr(e, 'response') and e.response.status_code == 404:
-            # Try alternative format if first attempt fails
             if formatted_ticker.endswith('.SI'):
-                # Try without .SI
                 return fetch_stock_data(ticker.replace('.SI', ''), period1, period2)
             elif not formatted_ticker.endswith('.SI'):
-                # Try with .SI
                 return fetch_stock_data(f"{ticker}.SI", period1, period2)
         elif hasattr(e, 'response') and e.response.status_code == 503:
             raise Exception("Yahoo Finance service is temporarily unavailable. Please try again in a few minutes.")
