@@ -33,21 +33,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     async function fetchStockData(ticker, startDate, endDate) {
-        // Convert dates to Unix timestamps
         const period1 = Math.floor(startDate.getTime() / 1000);
         const period2 = Math.floor(endDate.getTime() / 1000);
         
         try {
-            console.log(`Fetching data for ${ticker}...`);  // Debug log
             const response = await fetch(`/api/stock-data?ticker=${ticker}&period1=${period1}&period2=${period2}`);
             
             if (!response.ok) {
                 const errorData = await response.json();
+                if (response.status === 429) {
+                    throw new Error('Rate limit exceeded. Please wait a moment and try again.');
+                }
                 throw new Error(errorData.error || 'Failed to fetch data');
             }
             
             const data = await response.json();
-            console.log(`Received data for ${ticker}`);  // Debug log
             
             if (data.chart.error) {
                 throw new Error(`Yahoo Finance API error for ${ticker}`);
@@ -58,13 +58,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const closePrices = quotes.indicators.quote[0].close;
 
             return timestamps.map((timestamp, index) => ({
-                date: timestamp * 1000, // Convert to milliseconds
+                date: timestamp * 1000,
                 close: closePrices[index]
-            })).filter(item => item.close !== null); // Filter out null values
+            })).filter(item => item.close !== null);
             
         } catch (error) {
             console.error(`Error fetching data for ${ticker}:`, error);
-            throw new Error(`Failed to fetch data for ${ticker}. Please try again later.`);
+            throw error;
         }
     }
 
@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function calculateMetrics() {
         const entries = document.querySelectorAll('.stock-entry');
-        const timeframe = timeframeSelect.value;
+        const timeframe = document.getElementById('timeframe').value;
         const portfolio = Array.from(entries).map(entry => ({
             ticker: entry.querySelector('.ticker').value.toUpperCase(),
             weight: parseFloat(entry.querySelector('.weight').value) / 100
@@ -100,18 +100,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
         try {
             const { startDate, endDate } = getDateRange(timeframe);
-            const stocksData = await Promise.all(
-                portfolio.map(stock => 
-                    fetchStockData(stock.ticker, startDate, endDate)
-                )
-            );
+            
+            // Add delay between requests
+            const stocksData = [];
+            for (const stock of portfolio) {
+                try {
+                    const data = await fetchStockData(stock.ticker, startDate, endDate);
+                    stocksData.push(data);
+                    await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between requests
+                } catch (error) {
+                    if (error.message.includes('Rate limit')) {
+                        alert('Rate limit reached. Please wait a moment and try again.');
+                        return;
+                    }
+                    throw error;
+                }
+            }
 
             const metrics = calculatePortfolioMetrics(stocksData, portfolio);
             updateMetrics(metrics);
             createGraph(metrics.history, timeframe);
         } catch (error) {
             console.error('Error:', error);
-            alert('Failed to calculate metrics. Please check the ticker symbols and try again.');
+            alert(error.message);
         } finally {
             setLoadingState(false);
         }
