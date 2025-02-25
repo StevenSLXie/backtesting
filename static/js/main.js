@@ -37,20 +37,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const period1 = Math.floor(startDate.getTime() / 1000);
         const period2 = Math.floor(endDate.getTime() / 1000);
         
-        // Use Yahoo Finance API v6 which typically has less CORS issues
-        const historicalUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1d&events=history`;
-        
         try {
-            const response = await fetch(historicalUrl, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                    'Origin': window.location.origin
-                },
-                mode: 'cors'
-            });
-
-            if (!response.ok) throw new Error('Failed to fetch historical data');
+            const response = await fetch(`/api/stock-data?ticker=${ticker}&period1=${period1}&period2=${period2}`);
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to fetch data');
+            }
             
             const data = await response.json();
             
