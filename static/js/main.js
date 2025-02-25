@@ -32,95 +32,172 @@ document.addEventListener('DOMContentLoaded', function() {
         stockEntries.appendChild(entry);
     }
 
-    function calculateMetrics() {
+    async function fetchStockData(ticker, startDate, endDate) {
+        // Convert dates to Unix timestamps
+        const period1 = Math.floor(startDate.getTime() / 1000);
+        const period2 = Math.floor(endDate.getTime() / 1000);
+        
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${period1}&period2=${period2}&interval=1d`;
+        
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('Network response was not ok');
+            
+            const data = await response.json();
+            
+            if (data.chart.error) {
+                throw new Error(`Yahoo Finance API error for ${ticker}`);
+            }
+
+            const quotes = data.chart.result[0];
+            const timestamps = quotes.timestamp;
+            const closePrices = quotes.indicators.quote[0].close;
+
+            return timestamps.map((timestamp, index) => ({
+                date: timestamp * 1000, // Convert to milliseconds
+                close: closePrices[index]
+            })).filter(item => item.close !== null); // Filter out null values
+            
+        } catch (error) {
+            console.error(`Error fetching data for ${ticker}:`, error);
+            throw error;
+        }
+    }
+
+    function getDateRange(timeframe) {
+        const endDate = new Date();
+        const startDate = new Date();
+        
+        switch(timeframe) {
+            case '6M': startDate.setMonth(endDate.getMonth() - 6); break;
+            case '1Y': startDate.setFullYear(endDate.getFullYear() - 1); break;
+            case '2Y': startDate.setFullYear(endDate.getFullYear() - 2); break;
+            case '5Y': startDate.setFullYear(endDate.getFullYear() - 5); break;
+            case '10Y': startDate.setFullYear(endDate.getFullYear() - 10); break;
+        }
+        
+        return { startDate, endDate };
+    }
+
+    async function calculateMetrics() {
         const entries = document.querySelectorAll('.stock-entry');
-        const timeframe = document.getElementById('timeframe').value;
+        const timeframe = timeframeSelect.value;
         const portfolio = Array.from(entries).map(entry => ({
             ticker: entry.querySelector('.ticker').value.toUpperCase(),
             weight: parseFloat(entry.querySelector('.weight').value) / 100
         }));
 
-        // Validate inputs
         if (!validatePortfolio(portfolio)) {
             alert('Please ensure all fields are filled and weights sum to 100%');
             return;
         }
 
-        // Show loading state
         setLoadingState(true);
 
-        // Call backend API
-        fetch('/calculate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                portfolio: portfolio,
-                timeframe: timeframe
-            })
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            setLoadingState(false);
-            if (data.success) {
-                // Check for valid numbers before updating
-                if (isValidMetrics(data.metrics) && isValidHistory(data.history)) {
-                    updateMetrics(data.metrics);
-                    createGraph(data.history, timeframe);
-                } else {
-                    throw new Error('Invalid data received from server');
-                }
-            } else {
-                alert('Error: ' + data.error);
-            }
-        })
-        .catch(error => {
-            setLoadingState(false);
+        try {
+            const { startDate, endDate } = getDateRange(timeframe);
+            const stocksData = await Promise.all(
+                portfolio.map(stock => 
+                    fetchStockData(stock.ticker, startDate, endDate)
+                )
+            );
+
+            const metrics = calculatePortfolioMetrics(stocksData, portfolio);
+            updateMetrics(metrics);
+            createGraph(metrics.history, timeframe);
+        } catch (error) {
             console.error('Error:', error);
             alert('Failed to calculate metrics. Please check the ticker symbols and try again.');
-        });
-    }
-
-    function isValidMetrics(metrics) {
-        return metrics &&
-               !isNaN(metrics.totalReturn) &&
-               !isNaN(metrics.portfolioValue) &&
-               !isNaN(metrics.volatility) &&
-               !isNaN(metrics.dailyChange);
-    }
-
-    function isValidHistory(history) {
-        return history &&
-               Array.isArray(history.dates) &&
-               Array.isArray(history.values) &&
-               history.dates.length > 0 &&
-               history.values.length > 0 &&
-               history.values.every(v => !isNaN(v));
-    }
-
-    function setLoadingState(isLoading) {
-        const loadingText = '...';
-        if (isLoading) {
-            document.getElementById('total-return').textContent = loadingText;
-            document.getElementById('portfolio-value').textContent = loadingText;
-            document.getElementById('daily-change').textContent = loadingText;
-            document.getElementById('volatility').textContent = loadingText;
-            calculateButton.disabled = true;
-        } else {
-            calculateButton.disabled = false;
+        } finally {
+            setLoadingState(false);
         }
     }
 
+    function calculatePortfolioMetrics(stocksData, portfolio) {
+        // Initialize portfolio with base value of 100
+        const initialValue = 100;
+        let portfolioHistory = [];
+        
+        // Find the earliest common start date
+        const startDates = stocksData.map(data => data[0].date);
+        const latestStartDate = Math.max(...startDates);
+        
+        // Align all stock data to start from the same date
+        stocksData = stocksData.map(data => 
+            data.filter(day => day.date >= latestStartDate)
+        );
+        
+        // Normalize prices to start at 1
+        stocksData = stocksData.map(data => {
+            const initialPrice = data[0].close;
+            return data.map(day => ({
+                ...day,
+                close: day.close / initialPrice
+            }));
+        });
+
+        // Calculate weighted portfolio values
+        const numDays = stocksData[0].length;
+        for (let i = 0; i < numDays; i++) {
+            let portfolioValue = 0;
+            for (let j = 0; j < stocksData.length; j++) {
+                portfolioValue += stocksData[j][i].close * portfolio[j].weight * initialValue;
+            }
+            portfolioHistory.push({
+                date: new Date(stocksData[0][i].date),
+                value: portfolioValue
+            });
+        }
+
+        // Calculate metrics
+        const totalReturn = (portfolioHistory[portfolioHistory.length - 1].value - initialValue) / initialValue;
+        const dailyReturns = portfolioHistory.map((day, i) => 
+            i > 0 ? (day.value - portfolioHistory[i-1].value) / portfolioHistory[i-1].value : 0
+        );
+        
+        // Calculate annualized volatility
+        const volatility = calculateVolatility(dailyReturns);
+        
+        return {
+            totalReturn: totalReturn * 100,
+            portfolioValue: portfolioHistory[portfolioHistory.length - 1].value,
+            volatility: volatility * 100,
+            dailyChange: (dailyReturns[dailyReturns.length - 1] || 0) * 100,
+            history: portfolioHistory
+        };
+    }
+
+    function calculateVolatility(dailyReturns) {
+        const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+        const squaredDiffs = dailyReturns.map(r => Math.pow(r - mean, 2));
+        const variance = squaredDiffs.reduce((a, b) => a + b, 0) / squaredDiffs.length;
+        return Math.sqrt(variance * 252); // Annualized volatility
+    }
+
     function validatePortfolio(portfolio) {
-        const weightSum = portfolio.reduce((sum, stock) => sum + stock.weight, 0);
-        return portfolio.every(stock => stock.ticker && !isNaN(stock.weight)) &&
-               Math.abs(weightSum - 1) < 0.0001;
+        if (!portfolio.length) return false;
+        
+        const validInputs = portfolio.every(stock => 
+            stock.ticker && 
+            !isNaN(stock.weight) && 
+            stock.weight >= 0 && 
+            stock.weight <= 1
+        );
+        
+        const totalWeight = portfolio.reduce((sum, stock) => sum + stock.weight, 0);
+        return validInputs && Math.abs(totalWeight - 1) < 0.0001;
+    }
+
+    function setLoadingState(isLoading) {
+        calculateButton.disabled = isLoading;
+        calculateButton.textContent = isLoading ? 'Calculating...' : 'Calculate Metrics';
+        
+        if (isLoading) {
+            document.getElementById('total-return').textContent = '...';
+            document.getElementById('portfolio-value').textContent = '...';
+            document.getElementById('daily-change').textContent = '...';
+            document.getElementById('volatility').textContent = '...';
+        }
     }
 
     function updateMetrics(metrics) {
@@ -132,8 +209,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function createGraph(history, timeframe) {
         const trace = {
-            x: history.dates,
-            y: history.values,
+            x: history.map(point => point.date),
+            y: history.map(point => point.value),
             type: 'scatter',
             mode: 'lines',
             name: 'Portfolio Value'
@@ -149,20 +226,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 title: 'Value ($)',
                 tickformat: '$.2f'
             },
-            showlegend: true,
-            legend: {
-                x: 0,
-                y: 1
-            }
+            showlegend: true
         };
 
-        const config = {
-            responsive: true,
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToAdd: ['drawline', 'drawopenpath', 'eraseshape']
-        };
-
-        Plotly.newPlot('graph-container', [trace], layout, config);
+        Plotly.newPlot('graph-container', [trace], layout);
     }
 }); 
