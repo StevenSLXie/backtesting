@@ -19,7 +19,8 @@
             }
         },
         {
-            "handle": "filesystem"
+            "src": "/api/(.*)",
+            "dest": "main.py"
         },
         {
             "src": "/(.*)",
